@@ -12,6 +12,16 @@ import {
 } from 'lucide-react';
 import { Product, Order, SiteSettings } from '@/types';
 
+// Admin API helper using edge function with service role
+const adminApi = async (action: string, data?: any) => {
+  const { data: result, error } = await supabase.functions.invoke('admin-api', {
+    body: { action, data }
+  });
+  if (error) throw error;
+  if (!result.success) throw new Error(result.message);
+  return result.data;
+};
+
 const AdminDashboard = () => {
   const navigate = useNavigate();
   const { isAdmin, loading, signOut } = useAuth();
@@ -22,6 +32,7 @@ const AdminDashboard = () => {
   const [settings, setSettings] = useState<SiteSettings | null>(null);
   const [todayStats, setTodayStats] = useState({ orders: 0, revenue: 0 });
   const [automationRunning, setAutomationRunning] = useState(false);
+  const [dataLoading, setDataLoading] = useState(true);
   const automationInterval = useRef<NodeJS.Timeout | null>(null);
 
   // Product form state
@@ -45,12 +56,9 @@ const AdminDashboard = () => {
   // Automation scheduler
   useEffect(() => {
     if (settings?.automation_running && !automationInterval.current) {
-      // Run automation every 30 minutes to generate ~50 orders/day
       automationInterval.current = setInterval(() => {
         runAutomation();
-      }, 30 * 60 * 1000); // 30 minutes
-      
-      // Also run immediately on start
+      }, 30 * 60 * 1000);
       runAutomation();
     } else if (!settings?.automation_running && automationInterval.current) {
       clearInterval(automationInterval.current);
@@ -65,39 +73,39 @@ const AdminDashboard = () => {
   }, [settings?.automation_running]);
 
   const fetchData = async () => {
-    // Fetch products
-    const { data: productsData } = await supabase.from('products').select('*').order('created_at', { ascending: false });
-    if (productsData) setProducts(productsData as Product[]);
+    setDataLoading(true);
+    try {
+      const [productsData, ordersData, settingsData, statsData] = await Promise.all([
+        adminApi('get_products'),
+        adminApi('get_orders'),
+        adminApi('get_settings'),
+        adminApi('get_stats')
+      ]);
 
-    // Fetch orders with items
-    const { data: ordersData } = await supabase.from('orders').select('*').order('created_at', { ascending: false });
-    if (ordersData) {
-      setOrders(ordersData as Order[]);
-      // Calculate today's stats
-      const today = new Date().toISOString().split('T')[0];
-      const todayOrders = ordersData.filter(o => o.created_at.startsWith(today));
-      setTodayStats({
-        orders: todayOrders.length,
-        revenue: todayOrders.reduce((sum, o) => sum + Number(o.total_amount), 0)
-      });
+      setProducts(productsData || []);
+      setOrders(ordersData || []);
+      setSettings(settingsData);
+      setTodayStats(statsData || { orders: 0, revenue: 0 });
 
       // Fetch order items for each order
-      const itemsMap: Record<string, any[]> = {};
-      for (const order of ordersData) {
-        const { data: items } = await supabase
-          .from('order_items')
-          .select('*')
-          .eq('order_id', order.id);
-        if (items) {
-          itemsMap[order.id] = items;
+      if (ordersData) {
+        const itemsMap: Record<string, any[]> = {};
+        for (const order of ordersData) {
+          try {
+            const items = await adminApi('get_order_items', { order_id: order.id });
+            itemsMap[order.id] = items || [];
+          } catch (e) {
+            console.error('Error fetching items for order:', order.id);
+          }
         }
+        setOrderItems(itemsMap);
       }
-      setOrderItems(itemsMap);
+    } catch (error) {
+      console.error('Error fetching data:', error);
+      toast.error('Failed to load data');
+    } finally {
+      setDataLoading(false);
     }
-
-    // Fetch settings
-    const { data: settingsData } = await supabase.from('site_settings').select('*').limit(1).single();
-    if (settingsData) setSettings(settingsData as SiteSettings);
   };
 
   const runAutomation = async () => {
@@ -120,37 +128,52 @@ const AdminDashboard = () => {
 
   const handleProductSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const productData = {
-      name: productForm.name,
-      price: parseFloat(productForm.price),
-      discount_percentage: parseInt(productForm.discount_percentage) || 0,
-      image_url: productForm.image_url || null,
-    };
+    try {
+      const productData = {
+        name: productForm.name,
+        price: parseFloat(productForm.price),
+        discount_percentage: parseInt(productForm.discount_percentage) || 0,
+        image_url: productForm.image_url || null,
+      };
 
-    if (editingProduct) {
-      await supabase.from('products').update(productData).eq('id', editingProduct);
-      toast.success('Product updated!');
-    } else {
-      await supabase.from('products').insert(productData);
-      toast.success('Product added!');
+      if (editingProduct) {
+        await adminApi('update_product', { id: editingProduct, ...productData });
+        toast.success('Product updated!');
+      } else {
+        await adminApi('add_product', productData);
+        toast.success('Product added!');
+      }
+      
+      setProductForm({ name: '', price: '', discount_percentage: '0', image_url: '' });
+      setEditingProduct(null);
+      fetchData();
+    } catch (error) {
+      console.error('Product error:', error);
+      toast.error('Failed to save product');
     }
-    
-    setProductForm({ name: '', price: '', discount_percentage: '0', image_url: '' });
-    setEditingProduct(null);
-    fetchData();
   };
 
   const deleteProduct = async (id: string) => {
-    await supabase.from('products').delete().eq('id', id);
-    toast.success('Product deleted!');
-    fetchData();
+    try {
+      await adminApi('delete_product', { id });
+      toast.success('Product deleted!');
+      fetchData();
+    } catch (error) {
+      console.error('Delete error:', error);
+      toast.error('Failed to delete product');
+    }
   };
 
   const updateSettings = async (updates: Partial<SiteSettings>) => {
     if (!settings) return;
-    await supabase.from('site_settings').update(updates).eq('id', settings.id);
-    toast.success('Settings updated!');
-    fetchData();
+    try {
+      await adminApi('update_settings', { id: settings.id, ...updates });
+      toast.success('Settings updated!');
+      fetchData();
+    } catch (error) {
+      console.error('Settings error:', error);
+      toast.error('Failed to update settings');
+    }
   };
 
   const printInvoice = (order: Order) => {
@@ -249,8 +272,19 @@ const AdminDashboard = () => {
     navigate('/admin/login');
   };
 
-  if (loading) {
-    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  if (loading || dataLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-secondary/30">
+        <div className="text-center">
+          <div className="animate-spin h-12 w-12 border-4 border-primary border-t-transparent rounded-full mx-auto mb-4" />
+          <p className="text-muted-foreground">Loading admin panel...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAdmin) {
+    return null;
   }
 
   return (
@@ -360,7 +394,11 @@ const AdminDashboard = () => {
             </form>
 
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {products.map(product => (
+              {products.length === 0 ? (
+                <div className="col-span-full text-center py-12 text-muted-foreground">
+                  No products yet. Add your first product above!
+                </div>
+              ) : products.map(product => (
                 <div key={product.id} className="bg-card rounded-xl border p-4 flex gap-4">
                   <div className="h-20 w-20 rounded-lg bg-secondary overflow-hidden flex-shrink-0">
                     {product.image_url ? <img src={product.image_url} alt="" className="h-full w-full object-cover" /> : <span className="flex items-center justify-center h-full text-2xl">📦</span>}
@@ -383,42 +421,48 @@ const AdminDashboard = () => {
         {/* Orders Tab */}
         {activeTab === 'orders' && (
           <div className="bg-card rounded-xl border overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-muted">
-                  <tr>
-                    <th className="p-3 text-left">Order ID</th>
-                    <th className="p-3 text-left">Customer</th>
-                    <th className="p-3 text-left">Phone</th>
-                    <th className="p-3 text-left">Total</th>
-                    <th className="p-3 text-left">Type</th>
-                    <th className="p-3 text-left">Date</th>
-                    <th className="p-3 text-left">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {orders.map(order => (
-                    <tr key={order.id} className="border-t hover:bg-muted/50">
-                      <td className="p-3 font-mono text-xs">{order.order_id}</td>
-                      <td className="p-3">{order.customer_name}</td>
-                      <td className="p-3">{order.phone_number}</td>
-                      <td className="p-3 font-bold">PKR {Number(order.total_amount).toLocaleString()}</td>
-                      <td className="p-3">
-                        <span className={`px-2 py-1 rounded text-xs ${order.order_type === 'AUTO' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>
-                          {order.order_type}
-                        </span>
-                      </td>
-                      <td className="p-3 text-muted-foreground">{new Date(order.created_at).toLocaleString()}</td>
-                      <td className="p-3">
-                        <Button size="sm" variant="outline" onClick={() => printInvoice(order)}>
-                          <Printer className="h-3 w-3 mr-1" /> Print
-                        </Button>
-                      </td>
+            {orders.length === 0 ? (
+              <div className="text-center py-12 text-muted-foreground">
+                No orders yet. Orders will appear here when customers checkout or automation runs.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted">
+                    <tr>
+                      <th className="p-3 text-left">Order ID</th>
+                      <th className="p-3 text-left">Customer</th>
+                      <th className="p-3 text-left">Phone</th>
+                      <th className="p-3 text-left">Total</th>
+                      <th className="p-3 text-left">Type</th>
+                      <th className="p-3 text-left">Date</th>
+                      <th className="p-3 text-left">Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {orders.map(order => (
+                      <tr key={order.id} className="border-t hover:bg-muted/50">
+                        <td className="p-3 font-mono text-xs">{order.order_id}</td>
+                        <td className="p-3">{order.customer_name}</td>
+                        <td className="p-3">{order.phone_number}</td>
+                        <td className="p-3 font-bold">PKR {Number(order.total_amount).toLocaleString()}</td>
+                        <td className="p-3">
+                          <span className={`px-2 py-1 rounded text-xs ${order.order_type === 'AUTO' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>
+                            {order.order_type}
+                          </span>
+                        </td>
+                        <td className="p-3 text-muted-foreground">{new Date(order.created_at).toLocaleString()}</td>
+                        <td className="p-3">
+                          <Button size="sm" variant="outline" onClick={() => printInvoice(order)}>
+                            <Printer className="h-3 w-3 mr-1" /> Print
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
 
