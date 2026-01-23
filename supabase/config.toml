@@ -1,1 +1,10 @@
 project_id = "iyktsudmgxombhewlqxw"
+
+[functions.generate-orders]
+verify_jwt = false
+
+[functions.run-automation]
+verify_jwt = false
+
+[functions.sync-google-sheets]
+verify_jwt = false

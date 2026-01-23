@@ -1,82 +1,40 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Cherry, LogIn, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
 const AdminLogin = () => {
   const navigate = useNavigate();
-  const { user, isAdmin } = useAuth();
-  const [loading, setLoading] = useState(false);
-  const [isSignUp, setIsSignUp] = useState(false);
+  const { isAdmin, signIn, loading } = useAuth();
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
-    email: '',
+    username: '',
     password: '',
   });
   const [error, setError] = useState('');
 
   // Redirect if already logged in as admin
-  if (user && isAdmin) {
-    navigate('/admin');
-    return null;
-  }
+  useEffect(() => {
+    if (isAdmin) {
+      navigate('/admin');
+    }
+  }, [isAdmin, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    setLoading(true);
+    setIsSubmitting(true);
 
     try {
-      if (isSignUp) {
-        // Sign up new admin
-        const { data, error: signUpError } = await supabase.auth.signUp({
-          email: formData.email,
-          password: formData.password,
-          options: {
-            emailRedirectTo: `${window.location.origin}/admin`,
-          },
-        });
+      const { error: signInError } = await signIn(formData.username, formData.password);
 
-        if (signUpError) throw signUpError;
-
-        if (data.user) {
-          // Add admin role
-          const { error: roleError } = await supabase
-            .from('user_roles')
-            .insert({
-              user_id: data.user.id,
-              role: 'admin',
-            });
-
-          if (roleError) {
-            console.error('Error adding admin role:', roleError);
-          }
-
-          toast.success('Admin account created! Logging in...');
-          
-          // Auto sign in after signup
-          const { error: signInError } = await supabase.auth.signInWithPassword({
-            email: formData.email,
-            password: formData.password,
-          });
-
-          if (!signInError) {
-            navigate('/admin');
-          }
-        }
+      if (signInError) {
+        setError(signInError.message || 'Invalid credentials');
       } else {
-        // Sign in existing user
-        const { error: signInError } = await supabase.auth.signInWithPassword({
-          email: formData.email,
-          password: formData.password,
-        });
-
-        if (signInError) throw signInError;
-
         toast.success('Logged in successfully!');
         navigate('/admin');
       }
@@ -84,9 +42,17 @@ const AdminLogin = () => {
       console.error('Auth error:', err);
       setError(err.message || 'Authentication failed');
     } finally {
-      setLoading(false);
+      setIsSubmitting(false);
     }
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-secondary/50">
+        <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-secondary/50 p-4">
@@ -99,7 +65,7 @@ const AdminLogin = () => {
             </div>
             <h1 className="font-display text-2xl font-bold">Admin Panel</h1>
             <p className="text-muted-foreground mt-1">
-              {isSignUp ? 'Create admin account' : 'Sign in to continue'}
+              Sign in to continue
             </p>
           </div>
 
@@ -114,13 +80,13 @@ const AdminLogin = () => {
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="username">Username</Label>
               <Input
-                id="email"
-                type="email"
-                placeholder="admin@example.com"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                id="username"
+                type="text"
+                placeholder="Enter username"
+                value={formData.username}
+                onChange={(e) => setFormData({ ...formData, username: e.target.value })}
                 required
               />
             </div>
@@ -134,39 +100,27 @@ const AdminLogin = () => {
                 value={formData.password}
                 onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                 required
-                minLength={6}
               />
             </div>
 
             <Button 
               type="submit" 
               className="w-full"
-              disabled={loading}
+              disabled={isSubmitting}
             >
-              {loading ? (
+              {isSubmitting ? (
                 'Please wait...'
               ) : (
                 <>
                   <LogIn className="mr-2 h-4 w-4" />
-                  {isSignUp ? 'Create Account' : 'Sign In'}
+                  Sign In
                 </>
               )}
             </Button>
           </form>
 
-          {/* Toggle Sign Up / Sign In */}
-          <div className="mt-6 text-center">
-            <button
-              type="button"
-              onClick={() => setIsSignUp(!isSignUp)}
-              className="text-sm text-primary hover:underline"
-            >
-              {isSignUp ? 'Already have an account? Sign in' : 'Need an account? Sign up'}
-            </button>
-          </div>
-
           {/* Back to Store */}
-          <div className="mt-4 text-center">
+          <div className="mt-6 text-center">
             <a href="/" className="text-sm text-muted-foreground hover:text-foreground">
               ← Back to Store
             </a>
