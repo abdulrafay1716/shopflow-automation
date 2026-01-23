@@ -1,100 +1,51 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { supabase } from '@/integrations/supabase/client';
-import { User, Session } from '@supabase/supabase-js';
+import React, { createContext, useContext, useState, ReactNode } from 'react';
 
 interface AuthContextType {
-  user: User | null;
-  session: Session | null;
   isAdmin: boolean;
   loading: boolean;
-  signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
+  signIn: (username: string, password: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Hardcoded admin credentials
+const ADMIN_USERNAME = 'cherrys';
+const ADMIN_PASSWORD = 'controlpanel';
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(() => {
+    // Check if already logged in from session
+    return sessionStorage.getItem('admin_authenticated') === 'true';
+  });
+  const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    // Set up auth state listener first
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        
-        // Check admin role after auth state changes
-        if (session?.user) {
-          setTimeout(() => {
-            checkAdminRole(session.user.id);
-          }, 0);
-        } else {
-          setIsAdmin(false);
-        }
-      }
-    );
-
-    // Then check for existing session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      
-      if (session?.user) {
-        checkAdminRole(session.user.id);
-      }
-      setLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const checkAdminRole = async (userId: string) => {
+  const signIn = async (username: string, password: string) => {
+    setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', userId)
-        .eq('role', 'admin')
-        .maybeSingle();
-
-      if (error) {
-        console.error('Error checking admin role:', error);
-        setIsAdmin(false);
-        return;
+      // Check hardcoded credentials
+      if (username.toLowerCase() === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
+        setIsAdmin(true);
+        sessionStorage.setItem('admin_authenticated', 'true');
+        return { error: null };
+      } else {
+        return { error: new Error('Invalid username or password') };
       }
-
-      setIsAdmin(!!data);
-    } catch (error) {
-      console.error('Error checking admin role:', error);
-      setIsAdmin(false);
-    }
-  };
-
-  const signIn = async (email: string, password: string) => {
-    try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-      return { error };
     } catch (error) {
       return { error: error as Error };
+    } finally {
+      setLoading(false);
     }
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
     setIsAdmin(false);
+    sessionStorage.removeItem('admin_authenticated');
   };
 
   return (
     <AuthContext.Provider
       value={{
-        user,
-        session,
         isAdmin,
         loading,
         signIn,
