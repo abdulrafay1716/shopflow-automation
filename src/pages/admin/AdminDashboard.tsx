@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { 
   Cherry, LogOut, Package, ShoppingCart, Settings, BarChart3, 
-  Plus, Trash2, Edit, Play, Square, Printer, RefreshCw
+  Plus, Trash2, Edit, Play, Square, Printer, RefreshCw, Upload
 } from 'lucide-react';
 import { Product, Order, SiteSettings } from '@/types';
 
@@ -40,6 +40,8 @@ const AdminDashboard = () => {
     name: '', price: '', discount_percentage: '0', image_url: ''
   });
   const [editingProduct, setEditingProduct] = useState<string | null>(null);
+  const [uploadingProductImage, setUploadingProductImage] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
 
   useEffect(() => {
     if (!loading && !isAdmin) {
@@ -174,6 +176,47 @@ const AdminDashboard = () => {
       console.error('Settings error:', error);
       toast.error('Failed to update settings');
     }
+  };
+
+  const uploadImage = async (file: File, folder: string): Promise<string | null> => {
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${folder}/${Date.now()}.${fileExt}`;
+    
+    const { error } = await supabase.storage.from('images').upload(fileName, file);
+    if (error) {
+      console.error('Upload error:', error);
+      toast.error('Failed to upload image');
+      return null;
+    }
+    
+    const { data } = supabase.storage.from('images').getPublicUrl(fileName);
+    return data.publicUrl;
+  };
+
+  const handleProductImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    setUploadingProductImage(true);
+    const url = await uploadImage(file, 'products');
+    if (url) {
+      setProductForm({ ...productForm, image_url: url });
+      toast.success('Product image uploaded!');
+    }
+    setUploadingProductImage(false);
+  };
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !settings) return;
+    
+    setUploadingLogo(true);
+    const url = await uploadImage(file, 'logo');
+    if (url) {
+      await updateSettings({ logo_url: url } as any);
+      toast.success('Logo uploaded!');
+    }
+    setUploadingLogo(false);
   };
 
   const printInvoice = (order: Order) => {
@@ -378,9 +421,30 @@ const AdminDashboard = () => {
                   <Label>Discount %</Label>
                   <Input type="number" min="0" max="100" value={productForm.discount_percentage} onChange={e => setProductForm({...productForm, discount_percentage: e.target.value})} />
                 </div>
-                <div>
-                  <Label>Image URL</Label>
-                  <Input value={productForm.image_url} onChange={e => setProductForm({...productForm, image_url: e.target.value})} placeholder="https://..." />
+                <div className="space-y-2">
+                  <Label>Product Image</Label>
+                  <div className="flex gap-2">
+                    <Input 
+                      value={productForm.image_url} 
+                      onChange={e => setProductForm({...productForm, image_url: e.target.value})} 
+                      placeholder="https://... or upload"
+                      className="flex-1"
+                    />
+                    <label className="cursor-pointer">
+                      <input 
+                        type="file" 
+                        accept="image/*" 
+                        onChange={handleProductImageUpload} 
+                        className="hidden" 
+                      />
+                      <Button type="button" variant="outline" disabled={uploadingProductImage} asChild>
+                        <span>
+                          <Upload className="h-4 w-4 mr-1" />
+                          {uploadingProductImage ? 'Uploading...' : 'Upload'}
+                        </span>
+                      </Button>
+                    </label>
+                  </div>
                 </div>
               </div>
               <div className="flex gap-2">
@@ -480,14 +544,31 @@ const AdminDashboard = () => {
                     <span className="text-3xl">🍒</span>
                   )}
                 </div>
-                <div className="flex-1">
-                  <Label>Logo URL</Label>
-                  <Input 
-                    placeholder="https://example.com/logo.png"
-                    value={(settings as any).logo_url || ''} 
-                    onChange={e => updateSettings({ logo_url: e.target.value } as any)} 
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">Enter a URL to your logo image. Leave empty to use default cherry icon.</p>
+                <div className="flex-1 space-y-2">
+                  <Label>Logo URL or Upload</Label>
+                  <div className="flex gap-2">
+                    <Input 
+                      placeholder="https://example.com/logo.png"
+                      value={(settings as any).logo_url || ''} 
+                      onChange={e => updateSettings({ logo_url: e.target.value } as any)}
+                      className="flex-1"
+                    />
+                    <label className="cursor-pointer">
+                      <input 
+                        type="file" 
+                        accept="image/*" 
+                        onChange={handleLogoUpload} 
+                        className="hidden" 
+                      />
+                      <Button type="button" variant="outline" disabled={uploadingLogo} asChild>
+                        <span>
+                          <Upload className="h-4 w-4 mr-1" />
+                          {uploadingLogo ? 'Uploading...' : 'Upload'}
+                        </span>
+                      </Button>
+                    </label>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Upload an image or enter a URL. Leave empty to use default cherry icon.</p>
                 </div>
               </div>
             </div>
@@ -515,8 +596,8 @@ const AdminDashboard = () => {
                 Status: {settings.automation_running ? '🟢 Running' : '🔴 Stopped'}
               </p>
               <p className="text-xs text-muted-foreground">
-                When enabled, the system automatically generates ~500 orders per day (11 AM - 11 PM PKT) with random Pakistani customer data.
-                Each order contains 1-5 products with a maximum total of PKR 30,000.
+                When enabled, the system generates unlimited orders (11 AM - 8 PM PKT) with random Pakistani customer data.
+                After every ~80 orders, there's a 10-minute break before the next batch.
               </p>
               <Button 
                 variant={settings.automation_running ? 'destructive' : 'default'} 

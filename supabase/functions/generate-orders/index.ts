@@ -21,6 +21,11 @@ const cities = [
   'Sialkot', 'Gujranwala', 'Hyderabad', 'Bahawalpur', 'Sargodha', 'Sukkur', 'Abbottabad'
 ];
 
+const streets = [
+  'Main Road', 'Commercial Area', 'Block A', 'Block B', 'Block C', 'Sector 1', 'Sector 2',
+  'Near Masjid', 'Near Park', 'Near School', 'Near Hospital', 'Market Area'
+];
+
 const areas = [
   'Gulshan', 'DHA Phase', 'Johar Town', 'Model Town', 'Bahria Town', 'Clifton', 'Saddar',
   'Garden Town', 'F-10', 'G-11', 'I-8', 'Blue Area', 'Cantt', 'University Road', 'Mall Road'
@@ -52,7 +57,7 @@ function generateAddress(city: string): string {
   return `House ${houseNum}, Street ${streetNum}, ${area}, ${city}`;
 }
 
-async function syncToGoogleSheets(order: any, orderItems: any[]): Promise<void> {
+async function syncToGoogleSheets(order: any): Promise<void> {
   const googleSheetsWebhookUrl = Deno.env.get('GOOGLE_SHEETS_WEBHOOK_URL');
   
   if (!googleSheetsWebhookUrl) {
@@ -61,19 +66,19 @@ async function syncToGoogleSheets(order: any, orderItems: any[]): Promise<void> 
   }
 
   try {
-    const products = orderItems.map(item => `${item.product_name} x${item.quantity}`).join(', ');
+    const createdAt = new Date(order.created_at);
+    const dateStr = createdAt.toLocaleDateString('en-PK', { timeZone: 'Asia/Karachi' });
+    const timeStr = createdAt.toLocaleTimeString('en-PK', { timeZone: 'Asia/Karachi', hour: '2-digit', minute: '2-digit' });
     
+    // Format: Order ID, Name, Date, Contact Number, TYPE, Address, Time
     const sheetData = {
       order_id: order.order_id,
-      date_time: new Date(order.created_at).toLocaleString('en-PK', { timeZone: 'Asia/Karachi' }),
-      customer_name: order.customer_name,
-      phone_number: order.phone_number,
+      name: order.customer_name,
+      date: dateStr,
+      contact_number: order.phone_number,
+      type: order.order_type,
       address: order.address,
-      city: order.city,
-      products: products,
-      total_amount: order.total_amount,
-      order_type: order.order_type,
-      payment_method: order.payment_method,
+      time: timeStr,
     };
 
     const response = await fetch(googleSheetsWebhookUrl, {
@@ -116,15 +121,15 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Check if current time is between 11 AM and 11 PM Pakistan time
+    // Check if current time is between 11 AM and 8 PM Pakistan time
     const now = new Date();
     const pakistanTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Karachi' }));
     const hour = pakistanTime.getHours();
     
-    if (hour < 11 || hour >= 23) {
-      console.log(`Outside automation hours (11 AM - 11 PM PKT). Current hour: ${hour}`);
+    if (hour < 11 || hour >= 20) {
+      console.log(`Outside automation hours (11 AM - 8 PM PKT). Current hour: ${hour}`);
       return new Response(
-        JSON.stringify({ success: false, message: 'Outside automation hours (11 AM - 11 PM PKT)' }),
+        JSON.stringify({ success: false, message: 'Outside automation hours (11 AM - 8 PM PKT)' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -141,13 +146,12 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Randomly select 1-5 products
+    // Randomly select 1-5 products (no order total limit)
     const numProducts = Math.floor(Math.random() * 5) + 1;
     const shuffled = [...products].sort(() => 0.5 - Math.random());
     const selectedProducts = shuffled.slice(0, Math.min(numProducts, shuffled.length));
 
-    // Calculate total and ensure it doesn't exceed PKR 30,000
-    const MAX_TOTAL = 30000;
+    // Calculate total - no limit on order amount
     let orderItems: { product: typeof products[0]; quantity: number; finalPrice: number }[] = [];
     let runningTotal = 0;
 
@@ -155,16 +159,13 @@ Deno.serve(async (req) => {
       const discountedPrice = product.price * (1 - (product.discount_percentage || 0) / 100);
       const quantity = Math.floor(Math.random() * 3) + 1;
       const itemTotal = discountedPrice * quantity;
-
-      if (runningTotal + itemTotal <= MAX_TOTAL) {
-        orderItems.push({ product, quantity, finalPrice: discountedPrice });
-        runningTotal += itemTotal;
-      }
+      orderItems.push({ product, quantity, finalPrice: discountedPrice });
+      runningTotal += itemTotal;
     }
 
     if (orderItems.length === 0) {
       return new Response(
-        JSON.stringify({ success: false, message: 'No products fit within budget' }),
+        JSON.stringify({ success: false, message: 'No products selected' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -222,7 +223,7 @@ Deno.serve(async (req) => {
     }
 
     // Sync to Google Sheets
-    await syncToGoogleSheets(order, itemsToInsert);
+    await syncToGoogleSheets(order);
 
     console.log(`Generated order: ${orderId} for ${customerName}, Total: PKR ${runningTotal}`);
 

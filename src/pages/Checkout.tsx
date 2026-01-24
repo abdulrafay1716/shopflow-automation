@@ -103,6 +103,15 @@ const Checkout = () => {
 
       if (itemsError) throw itemsError;
 
+      // Sync to Google Sheets
+      try {
+        await supabase.functions.invoke('sync-google-sheets', {
+          body: { order: orderData }
+        });
+      } catch (syncError) {
+        console.log('Google Sheets sync skipped or failed:', syncError);
+      }
+
       setOrderId(newOrderId);
       setOrderComplete(true);
       clearCart();

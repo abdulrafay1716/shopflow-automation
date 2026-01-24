@@ -23,18 +23,19 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Format data for Google Sheets
+    const createdAt = new Date(order.created_at);
+    const dateStr = createdAt.toLocaleDateString('en-PK', { timeZone: 'Asia/Karachi' });
+    const timeStr = createdAt.toLocaleTimeString('en-PK', { timeZone: 'Asia/Karachi', hour: '2-digit', minute: '2-digit' });
+
+    // Format data for Google Sheets: Order ID, Name, Date, Contact Number, TYPE, Address, Time
     const sheetData = {
       order_id: order.order_id,
-      date_time: order.created_at,
-      customer_name: order.customer_name,
-      phone_number: order.phone_number,
+      name: order.customer_name,
+      date: dateStr,
+      contact_number: order.phone_number,
+      type: order.order_type,
       address: order.address,
-      city: order.city || '',
-      products: order.items?.map((item: any) => `${item.product_name} x${item.quantity}`).join(', ') || '',
-      total_amount: order.total_amount,
-      order_type: order.order_type,
-      payment_method: order.payment_method,
+      time: timeStr,
     };
 
     // Send to Google Sheets via webhook (Apps Script Web App)

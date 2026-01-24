@@ -29,23 +29,22 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Check if current time is between 11 AM and 11 PM Pakistan time
+    // Check if current time is between 11 AM and 8 PM Pakistan time
     const now = new Date();
     const pakistanTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Karachi' }));
     const hour = pakistanTime.getHours();
     
-    if (hour < 11 || hour >= 23) {
-      console.log(`Outside automation hours (11 AM - 11 PM PKT). Current hour: ${hour}`);
+    if (hour < 11 || hour >= 20) {
+      console.log(`Outside automation hours (11 AM - 8 PM PKT). Current hour: ${hour}`);
       return new Response(
-        JSON.stringify({ success: false, message: 'Outside automation hours (11 AM - 11 PM PKT)' }),
+        JSON.stringify({ success: false, message: 'Outside automation hours (11 AM - 8 PM PKT)' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Generate multiple orders (target ~500/day over 12 hours = ~42/hour)
-    // This function can be called via cron every 30 minutes, so generate ~21 orders per call
-    // Randomize between 18-24 orders per call
-    const ordersToGenerate = Math.floor(Math.random() * 7) + 18; // 18-24 orders per call
+    // Generate unlimited orders with 10 min break after every 80 orders
+    // Randomize between 75-85 orders per batch to average around 80
+    const ordersToGenerate = Math.floor(Math.random() * 11) + 75; // 75-85 orders per call
     const results = [];
 
     for (let i = 0; i < ordersToGenerate; i++) {
@@ -70,7 +69,7 @@ Deno.serve(async (req) => {
     }
 
     const successCount = results.filter(r => r.success).length;
-    console.log(`Automation run complete: Generated ${successCount}/${ordersToGenerate} orders`);
+    console.log(`Automation run complete: Generated ${successCount}/${ordersToGenerate} orders. Taking 10 min break before next batch.`);
 
     return new Response(
       JSON.stringify({ 
