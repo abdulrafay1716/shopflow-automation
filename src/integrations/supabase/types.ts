@@ -135,6 +135,7 @@ export type Database = {
         Row: {
           automation_running: boolean | null
           id: string
+          logo_url: string | null
           ticker_enabled: boolean | null
           ticker_text: string | null
           updated_at: string
@@ -142,6 +143,7 @@ export type Database = {
         Insert: {
           automation_running?: boolean | null
           id?: string
+          logo_url?: string | null
           ticker_enabled?: boolean | null
           ticker_text?: string | null
           updated_at?: string
@@ -149,6 +151,7 @@ export type Database = {
         Update: {
           automation_running?: boolean | null
           id?: string
+          logo_url?: string | null
           ticker_enabled?: boolean | null
           ticker_text?: string | null
           updated_at?: string

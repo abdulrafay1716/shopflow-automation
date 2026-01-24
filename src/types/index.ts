@@ -46,6 +46,7 @@ export interface SiteSettings {
   ticker_text: string;
   ticker_enabled: boolean;
   automation_running: boolean;
+  logo_url: string | null;
   updated_at: string;
 }
 

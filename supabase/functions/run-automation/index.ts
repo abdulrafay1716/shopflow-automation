@@ -29,9 +29,23 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Generate multiple orders (target ~50/day = ~2/hour on average)
-    // This function can be called via cron every 30 minutes
-    const ordersToGenerate = Math.floor(Math.random() * 3) + 1; // 1-3 orders per call
+    // Check if current time is between 11 AM and 11 PM Pakistan time
+    const now = new Date();
+    const pakistanTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Karachi' }));
+    const hour = pakistanTime.getHours();
+    
+    if (hour < 11 || hour >= 23) {
+      console.log(`Outside automation hours (11 AM - 11 PM PKT). Current hour: ${hour}`);
+      return new Response(
+        JSON.stringify({ success: false, message: 'Outside automation hours (11 AM - 11 PM PKT)' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Generate multiple orders (target ~500/day over 12 hours = ~42/hour)
+    // This function can be called via cron every 30 minutes, so generate ~21 orders per call
+    // Randomize between 18-24 orders per call
+    const ordersToGenerate = Math.floor(Math.random() * 7) + 18; // 18-24 orders per call
     const results = [];
 
     for (let i = 0; i < ordersToGenerate; i++) {
@@ -46,8 +60,8 @@ Deno.serve(async (req) => {
         const result = await response.json();
         results.push(result);
         
-        // Small delay between orders
-        await new Promise(resolve => setTimeout(resolve, 500));
+        // Small delay between orders (200-500ms)
+        await new Promise(resolve => setTimeout(resolve, Math.random() * 300 + 200));
       } catch (error: unknown) {
         console.error('Error generating order:', error);
         const message = error instanceof Error ? error.message : 'Unknown error';
@@ -55,12 +69,14 @@ Deno.serve(async (req) => {
       }
     }
 
-    console.log(`Automation run complete: Generated ${results.filter(r => r.success).length} orders`);
+    const successCount = results.filter(r => r.success).length;
+    console.log(`Automation run complete: Generated ${successCount}/${ordersToGenerate} orders`);
 
     return new Response(
       JSON.stringify({ 
         success: true, 
-        generated: results.filter(r => r.success).length,
+        generated: successCount,
+        attempted: ordersToGenerate,
         results 
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

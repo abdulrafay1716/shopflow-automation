@@ -33,10 +33,16 @@ function generateRandomName(): string {
 }
 
 function generatePhoneNumber(): string {
-  const prefixes = ['300', '301', '302', '303', '304', '305', '306', '311', '312', '313', '321', '322', '323', '332', '333'];
+  // Pakistani mobile prefixes
+  const prefixes = ['300', '301', '302', '303', '304', '305', '306', '307', '308', '309',
+                    '310', '311', '312', '313', '314', '315', '316', '317', '318', '319',
+                    '320', '321', '322', '323', '324', '325', '330', '331', '332', '333',
+                    '334', '335', '336', '337', '338', '339', '340', '341', '342', '343',
+                    '344', '345', '346', '347', '348', '349'];
   const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
   const number = Math.floor(Math.random() * 10000000).toString().padStart(7, '0');
-  return `03${prefix.slice(2)}-${number}`;
+  // Format: 0347-2455894
+  return `0${prefix}-${number}`;
 }
 
 function generateAddress(city: string): string {
@@ -44,6 +50,46 @@ function generateAddress(city: string): string {
   const houseNum = Math.floor(Math.random() * 500) + 1;
   const streetNum = Math.floor(Math.random() * 50) + 1;
   return `House ${houseNum}, Street ${streetNum}, ${area}, ${city}`;
+}
+
+async function syncToGoogleSheets(order: any, orderItems: any[]): Promise<void> {
+  const googleSheetsWebhookUrl = Deno.env.get('GOOGLE_SHEETS_WEBHOOK_URL');
+  
+  if (!googleSheetsWebhookUrl) {
+    console.log('Google Sheets webhook URL not configured, skipping sync');
+    return;
+  }
+
+  try {
+    const products = orderItems.map(item => `${item.product_name} x${item.quantity}`).join(', ');
+    
+    const sheetData = {
+      order_id: order.order_id,
+      date_time: new Date(order.created_at).toLocaleString('en-PK', { timeZone: 'Asia/Karachi' }),
+      customer_name: order.customer_name,
+      phone_number: order.phone_number,
+      address: order.address,
+      city: order.city,
+      products: products,
+      total_amount: order.total_amount,
+      order_type: order.order_type,
+      payment_method: order.payment_method,
+    };
+
+    const response = await fetch(googleSheetsWebhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(sheetData),
+    });
+
+    if (!response.ok) {
+      console.error('Failed to sync to Google Sheets:', await response.text());
+    } else {
+      console.log('Successfully synced order to Google Sheets:', order.order_id);
+    }
+  } catch (error) {
+    console.error('Error syncing to Google Sheets:', error);
+  }
 }
 
 Deno.serve(async (req) => {
@@ -66,6 +112,19 @@ Deno.serve(async (req) => {
     if (!settings?.automation_running) {
       return new Response(
         JSON.stringify({ success: false, message: 'Automation is stopped' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Check if current time is between 11 AM and 11 PM Pakistan time
+    const now = new Date();
+    const pakistanTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Karachi' }));
+    const hour = pakistanTime.getHours();
+    
+    if (hour < 11 || hour >= 23) {
+      console.log(`Outside automation hours (11 AM - 11 PM PKT). Current hour: ${hour}`);
+      return new Response(
+        JSON.stringify({ success: false, message: 'Outside automation hours (11 AM - 11 PM PKT)' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -161,6 +220,9 @@ Deno.serve(async (req) => {
     if (itemsError) {
       console.error('Order items error:', itemsError);
     }
+
+    // Sync to Google Sheets
+    await syncToGoogleSheets(order, itemsToInsert);
 
     console.log(`Generated order: ${orderId} for ${customerName}, Total: PKR ${runningTotal}`);
 

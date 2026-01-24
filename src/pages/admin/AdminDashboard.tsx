@@ -469,6 +469,29 @@ const AdminDashboard = () => {
         {/* Settings Tab */}
         {activeTab === 'settings' && settings && (
           <div className="space-y-6">
+            {/* Logo Settings */}
+            <div className="bg-card rounded-xl border p-6 space-y-4">
+              <h3 className="font-semibold">Store Logo</h3>
+              <div className="flex items-center gap-4">
+                <div className="h-16 w-16 rounded-lg bg-secondary overflow-hidden flex-shrink-0 flex items-center justify-center">
+                  {(settings as any).logo_url ? (
+                    <img src={(settings as any).logo_url} alt="Store Logo" className="h-full w-full object-contain" />
+                  ) : (
+                    <span className="text-3xl">🍒</span>
+                  )}
+                </div>
+                <div className="flex-1">
+                  <Label>Logo URL</Label>
+                  <Input 
+                    placeholder="https://example.com/logo.png"
+                    value={(settings as any).logo_url || ''} 
+                    onChange={e => updateSettings({ logo_url: e.target.value } as any)} 
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">Enter a URL to your logo image. Leave empty to use default cherry icon.</p>
+                </div>
+              </div>
+            </div>
+
             <div className="bg-card rounded-xl border p-6 space-y-4">
               <h3 className="font-semibold">Discount Ticker</h3>
               <div>
@@ -492,7 +515,7 @@ const AdminDashboard = () => {
                 Status: {settings.automation_running ? '🟢 Running' : '🔴 Stopped'}
               </p>
               <p className="text-xs text-muted-foreground">
-                When enabled, the system automatically generates ~50 orders per day with random Pakistani customer data.
+                When enabled, the system automatically generates ~500 orders per day (11 AM - 11 PM PKT) with random Pakistani customer data.
                 Each order contains 1-5 products with a maximum total of PKR 30,000.
               </p>
               <Button 
@@ -510,8 +533,7 @@ const AdminDashboard = () => {
             <div className="bg-card rounded-xl border p-6 space-y-4">
               <h3 className="font-semibold">Google Sheets Integration</h3>
               <p className="text-xs text-muted-foreground">
-                To enable Google Sheets sync, add a GOOGLE_SHEETS_WEBHOOK_URL secret with your Google Apps Script web app URL.
-                All orders (manual and automated) will be automatically logged to your spreadsheet.
+                ✅ Google Sheets webhook is configured. All orders (manual and automated) are automatically logged to your spreadsheet.
               </p>
             </div>
           </div>
