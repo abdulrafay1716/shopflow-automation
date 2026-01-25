@@ -133,7 +133,10 @@ export type Database = {
       }
       site_settings: {
         Row: {
+          automation_end_hour: number | null
           automation_running: boolean | null
+          automation_start_hour: number | null
+          automation_timezone: string | null
           id: string
           logo_url: string | null
           ticker_enabled: boolean | null
@@ -141,7 +144,10 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          automation_end_hour?: number | null
           automation_running?: boolean | null
+          automation_start_hour?: number | null
+          automation_timezone?: string | null
           id?: string
           logo_url?: string | null
           ticker_enabled?: boolean | null
@@ -149,7 +155,10 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          automation_end_hour?: number | null
           automation_running?: boolean | null
+          automation_start_hour?: number | null
+          automation_timezone?: string | null
           id?: string
           logo_url?: string | null
           ticker_enabled?: boolean | null

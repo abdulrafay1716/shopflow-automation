@@ -15,10 +15,10 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Check if automation is running
+    // Check if automation is running and get time settings
     const { data: settings } = await supabase
       .from('site_settings')
-      .select('automation_running')
+      .select('automation_running, automation_start_hour, automation_end_hour, automation_timezone')
       .limit(1)
       .single();
 
@@ -29,15 +29,20 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Check if current time is between 11 AM and 8 PM Pakistan time
+    // Get automation time settings
+    const startHour = settings.automation_start_hour ?? 11;
+    const endHour = settings.automation_end_hour ?? 20;
+    const timezone = settings.automation_timezone ?? 'Asia/Karachi';
+
+    // Check if current time is within configured hours
     const now = new Date();
-    const pakistanTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Karachi' }));
-    const hour = pakistanTime.getHours();
+    const localTime = new Date(now.toLocaleString('en-US', { timeZone: timezone }));
+    const hour = localTime.getHours();
     
-    if (hour < 11 || hour >= 20) {
-      console.log(`Outside automation hours (11 AM - 8 PM PKT). Current hour: ${hour}`);
+    if (hour < startHour || hour >= endHour) {
+      console.log(`Outside automation hours (${startHour}:00 - ${endHour}:00 ${timezone}). Current hour: ${hour}`);
       return new Response(
-        JSON.stringify({ success: false, message: 'Outside automation hours (11 AM - 8 PM PKT)' }),
+        JSON.stringify({ success: false, message: `Outside automation hours (${startHour}:00 - ${endHour}:00)` }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }

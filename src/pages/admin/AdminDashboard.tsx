@@ -8,9 +8,15 @@ import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { 
   Cherry, LogOut, Package, ShoppingCart, Settings, BarChart3, 
-  Plus, Trash2, Edit, Play, Square, Printer, RefreshCw, Upload
+  Plus, Trash2, Edit, Play, Square, Printer, RefreshCw, Upload, Clock
 } from 'lucide-react';
-import { Product, Order, SiteSettings } from '@/types';
+import { Product, Order, SiteSettings, COMMON_TIMEZONES } from '@/types';
+
+// Generate hour options for time selection
+const HOUR_OPTIONS = Array.from({ length: 24 }, (_, i) => ({
+  value: i,
+  label: `${i.toString().padStart(2, '0')}:00`,
+}));
 
 // Admin API helper using edge function with service role
 const adminApi = async (action: string, data?: any) => {
@@ -590,14 +596,78 @@ const AdminDashboard = () => {
               </Button>
             </div>
 
+            {/* Automation Time Range Settings */}
+            <div className="bg-card rounded-xl border p-6 space-y-4">
+              <div className="flex items-center gap-2">
+                <Clock className="h-5 w-5 text-primary" />
+                <h3 className="font-semibold">Automation Time Range</h3>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Configure when the automation should run. The system will generate unlimited orders during this time window.
+                After every 80 orders, there's an automatic 10-minute break.
+              </p>
+              
+              <div className="grid gap-4 md:grid-cols-3">
+                <div className="space-y-2">
+                  <Label>Start Time</Label>
+                  <select
+                    value={settings.automation_start_hour ?? 11}
+                    onChange={(e) => updateSettings({ automation_start_hour: parseInt(e.target.value) })}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  >
+                    {HOUR_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label>End Time</Label>
+                  <select
+                    value={settings.automation_end_hour ?? 20}
+                    onChange={(e) => updateSettings({ automation_end_hour: parseInt(e.target.value) })}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  >
+                    {HOUR_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label>Timezone (Country)</Label>
+                  <select
+                    value={settings.automation_timezone ?? 'Asia/Karachi'}
+                    onChange={(e) => updateSettings({ automation_timezone: e.target.value })}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  >
+                    {COMMON_TIMEZONES.map((tz) => (
+                      <option key={tz.value} value={tz.value}>{tz.country} - {tz.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              
+              <div className="bg-muted/50 rounded-lg p-3 text-sm">
+                <p className="font-medium">Current Settings:</p>
+                <p className="text-muted-foreground">
+                  Automation runs from {HOUR_OPTIONS.find(h => h.value === (settings.automation_start_hour ?? 11))?.label} to{' '}
+                  {HOUR_OPTIONS.find(h => h.value === (settings.automation_end_hour ?? 20))?.label}{' '}
+                  ({COMMON_TIMEZONES.find(t => t.value === (settings.automation_timezone ?? 'Asia/Karachi'))?.label})
+                </p>
+              </div>
+            </div>
+
             <div className="bg-card rounded-xl border p-6 space-y-4">
               <h3 className="font-semibold">Automation Control</h3>
               <p className="text-sm text-muted-foreground">
                 Status: {settings.automation_running ? '🟢 Running' : '🔴 Stopped'}
               </p>
               <p className="text-xs text-muted-foreground">
-                When enabled, the system generates unlimited orders (11 AM - 8 PM PKT) with random Pakistani customer data.
-                After every ~80 orders, there's a 10-minute break before the next batch.
+                • Maximum order limit: PKR 30,000 per bill<br />
+                • Unlimited bills during the time window<br />
+                • 10-minute break after every 80 orders<br />
+                • Orders sync to Google Sheets automatically
               </p>
               <Button 
                 variant={settings.automation_running ? 'destructive' : 'default'} 
@@ -614,7 +684,8 @@ const AdminDashboard = () => {
             <div className="bg-card rounded-xl border p-6 space-y-4">
               <h3 className="font-semibold">Google Sheets Integration</h3>
               <p className="text-xs text-muted-foreground">
-                ✅ Google Sheets webhook is configured. All orders (manual and automated) are automatically logged to your spreadsheet.
+                ✅ Google Sheets webhook is configured. All orders (manual and automated) are automatically logged with:
+                Order ID, Name, Date, Contact Number, Type, Address, Time
               </p>
             </div>
           </div>
