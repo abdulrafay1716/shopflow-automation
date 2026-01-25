@@ -64,12 +64,11 @@ const Checkout = () => {
     setLoading(true);
 
     try {
-      // Generate order ID
-      const orderIdPrefix = 'CHR-' + new Date().toISOString().slice(0, 10).replace(/-/g, '') + '-';
-      const randomSuffix = Math.floor(1000 + Math.random() * 9000);
-      const newOrderId = orderIdPrefix + randomSuffix;
+      // Generate order ID using database function
+      const { data: orderIdData, error: orderIdError } = await supabase.rpc('generate_order_id');
+      const newOrderId = orderIdData || `CHR-${Date.now()}`;
 
-      // Create order
+      // Create order - using anon key which allows insert via RLS policy
       const { data: orderData, error: orderError } = await supabase
         .from('orders')
         .insert({
@@ -79,29 +78,35 @@ const Checkout = () => {
           address: formData.address,
           city: formData.city,
           total_amount: totalAmount,
-          order_type: 'MANUAL',
+          order_type: 'MANUAL' as const,
           payment_method: 'COD',
         })
         .select()
         .single();
 
-      if (orderError) throw orderError;
+      if (orderError) {
+        console.error('Order creation failed:', orderError);
+        throw orderError;
+      }
 
       // Create order items
-      const orderItems = items.map((item) => ({
+      const orderItemsData = items.map((item) => ({
         order_id: orderData.id,
         product_id: item.product.id,
         product_name: item.product.name,
         quantity: item.quantity,
-        unit_price: item.product.price,
+        unit_price: item.product.price - (item.product.price * item.product.discount_percentage) / 100,
         discount_percentage: item.product.discount_percentage,
       }));
 
       const { error: itemsError } = await supabase
         .from('order_items')
-        .insert(orderItems);
+        .insert(orderItemsData);
 
-      if (itemsError) throw itemsError;
+      if (itemsError) {
+        console.error('Order items creation failed:', itemsError);
+        throw itemsError;
+      }
 
       // Sync to Google Sheets
       try {
