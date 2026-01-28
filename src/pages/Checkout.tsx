@@ -67,11 +67,19 @@ const Checkout = () => {
       // Generate order ID using database function
       const { data: orderIdData, error: orderIdError } = await supabase.rpc('generate_order_id');
       const newOrderId = orderIdData || `CHR-${Date.now()}`;
+      if (orderIdError) {
+        console.error('Order ID generation failed:', orderIdError);
+      }
+
+      // IMPORTANT: Public users cannot SELECT from `orders` (PII protection).
+      // So we create our own UUID client-side and avoid `.select()` on insert.
+      const newOrderUuid = crypto.randomUUID();
 
       // Create order - using anon key which allows insert via RLS policy
-      const { data: orderData, error: orderError } = await supabase
+      const { error: orderError } = await supabase
         .from('orders')
         .insert({
+          id: newOrderUuid,
           order_id: newOrderId,
           customer_name: formData.customer_name,
           phone_number: formData.phone_number,
@@ -80,9 +88,7 @@ const Checkout = () => {
           total_amount: totalAmount,
           order_type: 'MANUAL' as const,
           payment_method: 'COD',
-        })
-        .select()
-        .single();
+        });
 
       if (orderError) {
         console.error('Order creation failed:', orderError);
@@ -91,7 +97,7 @@ const Checkout = () => {
 
       // Create order items
       const orderItemsData = items.map((item) => ({
-        order_id: orderData.id,
+        order_id: newOrderUuid,
         product_id: item.product.id,
         product_name: item.product.name,
         quantity: item.quantity,
@@ -111,7 +117,20 @@ const Checkout = () => {
       // Sync to Google Sheets
       try {
         await supabase.functions.invoke('sync-google-sheets', {
-          body: { order: orderData }
+          body: {
+            order: {
+              id: newOrderUuid,
+              order_id: newOrderId,
+              customer_name: formData.customer_name,
+              phone_number: formData.phone_number,
+              address: formData.address,
+              city: formData.city,
+              total_amount: totalAmount,
+              order_type: 'MANUAL',
+              payment_method: 'COD',
+              created_at: new Date().toISOString(),
+            },
+          }
         });
       } catch (syncError) {
         console.log('Google Sheets sync skipped or failed:', syncError);
@@ -122,9 +141,10 @@ const Checkout = () => {
       clearCart();
       toast.success('Order placed successfully!');
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Checkout error:', error);
-      toast.error('Failed to place order. Please try again.');
+      const msg = typeof error?.message === 'string' ? error.message : 'Failed to place order. Please try again.';
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
