@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
+import { decode } from 'https://deno.land/std@0.208.0/encoding/base64.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -88,6 +89,16 @@ Deno.serve(async (req) => {
         });
       }
 
+      case 'get_all_order_items': {
+        const { data: items, error } = await supabase
+          .from('order_items')
+          .select('*');
+        if (error) throw error;
+        return new Response(JSON.stringify({ success: true, data: items }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
       case 'get_settings': {
         const { data: settings, error } = await supabase
           .from('site_settings')
@@ -127,6 +138,29 @@ Deno.serve(async (req) => {
           revenue: orders?.reduce((sum, o) => sum + Number(o.total_amount), 0) || 0
         };
         return new Response(JSON.stringify({ success: true, data: stats }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      case 'upload_image': {
+        const { base64, fileName, folder } = data;
+        const fileData = decode(base64);
+        const filePath = `${folder}/${Date.now()}_${fileName}`;
+        
+        const { error: uploadError } = await supabase.storage
+          .from('images')
+          .upload(filePath, fileData, {
+            contentType: data.contentType || 'image/jpeg',
+            upsert: false
+          });
+        
+        if (uploadError) {
+          console.error('Upload error:', uploadError);
+          throw uploadError;
+        }
+        
+        const { data: urlData } = supabase.storage.from('images').getPublicUrl(filePath);
+        return new Response(JSON.stringify({ success: true, data: { url: urlData.publicUrl } }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }

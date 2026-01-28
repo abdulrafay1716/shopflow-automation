@@ -8,9 +8,10 @@ import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { 
   Cherry, LogOut, Package, ShoppingCart, Settings, BarChart3, 
-  Plus, Trash2, Edit, Play, Square, Printer, RefreshCw, Upload, Clock
+  Plus, Trash2, Edit, Play, Square, Printer, RefreshCw, Upload, Clock, Download
 } from 'lucide-react';
 import { Product, Order, SiteSettings, COMMON_TIMEZONES } from '@/types';
+import * as XLSX from 'xlsx';
 
 // Generate hour options for time selection
 const HOUR_OPTIONS = Array.from({ length: 24 }, (_, i) => ({
@@ -26,6 +27,21 @@ const adminApi = async (action: string, data?: any) => {
   if (error) throw error;
   if (!result.success) throw new Error(result.message);
   return result.data;
+};
+
+// Helper to convert file to base64
+const fileToBase64 = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => {
+      const result = reader.result as string;
+      // Remove the data URL prefix to get just the base64
+      const base64 = result.split(',')[1];
+      resolve(base64);
+    };
+    reader.onerror = (error) => reject(error);
+  });
 };
 
 const AdminDashboard = () => {
@@ -48,6 +64,9 @@ const AdminDashboard = () => {
   const [editingProduct, setEditingProduct] = useState<string | null>(null);
   const [uploadingProductImage, setUploadingProductImage] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  
+  // Ticker text local state for controlled input
+  const [tickerText, setTickerText] = useState('');
 
   useEffect(() => {
     if (!loading && !isAdmin) {
@@ -93,6 +112,7 @@ const AdminDashboard = () => {
       setProducts(productsData || []);
       setOrders(ordersData || []);
       setSettings(settingsData);
+      setTickerText(settingsData?.ticker_text || '');
       setTodayStats(statsData || { orders: 0, revenue: 0 });
 
       // Fetch order items for each order
@@ -184,19 +204,22 @@ const AdminDashboard = () => {
     }
   };
 
+  // Upload image via edge function (uses service role key)
   const uploadImage = async (file: File, folder: string): Promise<string | null> => {
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${folder}/${Date.now()}.${fileExt}`;
-    
-    const { error } = await supabase.storage.from('images').upload(fileName, file);
-    if (error) {
+    try {
+      const base64 = await fileToBase64(file);
+      const result = await adminApi('upload_image', {
+        base64,
+        fileName: file.name,
+        folder,
+        contentType: file.type
+      });
+      return result.url;
+    } catch (error) {
       console.error('Upload error:', error);
       toast.error('Failed to upload image');
       return null;
     }
-    
-    const { data } = supabase.storage.from('images').getPublicUrl(fileName);
-    return data.publicUrl;
   };
 
   const handleProductImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -210,6 +233,8 @@ const AdminDashboard = () => {
       toast.success('Product image uploaded!');
     }
     setUploadingProductImage(false);
+    // Reset input
+    e.target.value = '';
   };
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -223,6 +248,62 @@ const AdminDashboard = () => {
       toast.success('Logo uploaded!');
     }
     setUploadingLogo(false);
+    // Reset input
+    e.target.value = '';
+  };
+
+  // Export orders to Excel
+  const exportOrdersToExcel = async () => {
+    try {
+      // Fetch all order items
+      const allItems = await adminApi('get_all_order_items');
+      
+      // Create workbook
+      const wb = XLSX.utils.book_new();
+      
+      // Orders sheet
+      const ordersData = orders.map(order => ({
+        'Order ID': order.order_id,
+        'Customer Name': order.customer_name,
+        'Phone Number': order.phone_number,
+        'City': order.city || 'N/A',
+        'Address': order.address,
+        'Total Amount (PKR)': Number(order.total_amount),
+        'Order Type': order.order_type,
+        'Payment Method': order.payment_method,
+        'Date': new Date(order.created_at).toLocaleDateString(),
+        'Time': new Date(order.created_at).toLocaleTimeString()
+      }));
+      
+      const ordersSheet = XLSX.utils.json_to_sheet(ordersData);
+      XLSX.utils.book_append_sheet(wb, ordersSheet, 'Orders');
+      
+      // Order Items sheet
+      const itemsData = allItems.map((item: any) => {
+        const order = orders.find(o => o.id === item.order_id);
+        return {
+          'Order ID': order?.order_id || 'N/A',
+          'Product Name': item.product_name,
+          'Quantity': item.quantity,
+          'Unit Price (PKR)': Number(item.unit_price),
+          'Discount %': item.discount_percentage || 0,
+          'Total (PKR)': Number(item.unit_price) * item.quantity,
+          'Date': order ? new Date(order.created_at).toLocaleDateString() : 'N/A'
+        };
+      });
+      
+      const itemsSheet = XLSX.utils.json_to_sheet(itemsData);
+      XLSX.utils.book_append_sheet(wb, itemsSheet, 'Order Items');
+      
+      // Download file
+      const fileName = `orders_report_${new Date().toISOString().split('T')[0]}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+      
+      toast.success('Report downloaded successfully!');
+    } catch (error) {
+      console.error('Export error:', error);
+      toast.error('Failed to export orders');
+    }
   };
 
   const printInvoice = (order: Order) => {
@@ -490,49 +571,59 @@ const AdminDashboard = () => {
 
         {/* Orders Tab */}
         {activeTab === 'orders' && (
-          <div className="bg-card rounded-xl border overflow-hidden">
-            {orders.length === 0 ? (
-              <div className="text-center py-12 text-muted-foreground">
-                No orders yet. Orders will appear here when customers checkout or automation runs.
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-muted">
-                    <tr>
-                      <th className="p-3 text-left">Order ID</th>
-                      <th className="p-3 text-left">Customer</th>
-                      <th className="p-3 text-left">Phone</th>
-                      <th className="p-3 text-left">Total</th>
-                      <th className="p-3 text-left">Type</th>
-                      <th className="p-3 text-left">Date</th>
-                      <th className="p-3 text-left">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {orders.map(order => (
-                      <tr key={order.id} className="border-t hover:bg-muted/50">
-                        <td className="p-3 font-mono text-xs">{order.order_id}</td>
-                        <td className="p-3">{order.customer_name}</td>
-                        <td className="p-3">{order.phone_number}</td>
-                        <td className="p-3 font-bold">PKR {Number(order.total_amount).toLocaleString()}</td>
-                        <td className="p-3">
-                          <span className={`px-2 py-1 rounded text-xs ${order.order_type === 'AUTO' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>
-                            {order.order_type}
-                          </span>
-                        </td>
-                        <td className="p-3 text-muted-foreground">{new Date(order.created_at).toLocaleString()}</td>
-                        <td className="p-3">
-                          <Button size="sm" variant="outline" onClick={() => printInvoice(order)}>
-                            <Printer className="h-3 w-3 mr-1" /> Print
-                          </Button>
-                        </td>
+          <div className="space-y-4">
+            {/* Export Button */}
+            <div className="flex justify-end">
+              <Button onClick={exportOrdersToExcel} disabled={orders.length === 0}>
+                <Download className="mr-2 h-4 w-4" />
+                Get Report (Excel)
+              </Button>
+            </div>
+            
+            <div className="bg-card rounded-xl border overflow-hidden">
+              {orders.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground">
+                  No orders yet. Orders will appear here when customers checkout or automation runs.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-muted">
+                      <tr>
+                        <th className="p-3 text-left">Order ID</th>
+                        <th className="p-3 text-left">Customer</th>
+                        <th className="p-3 text-left">Phone</th>
+                        <th className="p-3 text-left">Total</th>
+                        <th className="p-3 text-left">Type</th>
+                        <th className="p-3 text-left">Date</th>
+                        <th className="p-3 text-left">Actions</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                    </thead>
+                    <tbody>
+                      {orders.map(order => (
+                        <tr key={order.id} className="border-t hover:bg-muted/50">
+                          <td className="p-3 font-mono text-xs">{order.order_id}</td>
+                          <td className="p-3">{order.customer_name}</td>
+                          <td className="p-3">{order.phone_number}</td>
+                          <td className="p-3 font-bold">PKR {Number(order.total_amount).toLocaleString()}</td>
+                          <td className="p-3">
+                            <span className={`px-2 py-1 rounded text-xs ${order.order_type === 'AUTO' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>
+                              {order.order_type}
+                            </span>
+                          </td>
+                          <td className="p-3 text-muted-foreground">{new Date(order.created_at).toLocaleString()}</td>
+                          <td className="p-3">
+                            <Button size="sm" variant="outline" onClick={() => printInvoice(order)}>
+                              <Printer className="h-3 w-3 mr-1" /> Print
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -581,12 +672,22 @@ const AdminDashboard = () => {
 
             <div className="bg-card rounded-xl border p-6 space-y-4">
               <h3 className="font-semibold">Discount Ticker</h3>
-              <div>
+              <div className="space-y-2">
                 <Label>Ticker Text</Label>
-                <Input 
-                  value={settings.ticker_text || ''} 
-                  onChange={e => updateSettings({ ticker_text: e.target.value })} 
-                />
+                <div className="flex gap-2">
+                  <Input 
+                    value={tickerText} 
+                    onChange={e => setTickerText(e.target.value)} 
+                    placeholder="Enter ticker text..."
+                    className="flex-1"
+                  />
+                  <Button 
+                    onClick={() => updateSettings({ ticker_text: tickerText })}
+                    disabled={tickerText === settings.ticker_text}
+                  >
+                    Save
+                  </Button>
+                </div>
               </div>
               <Button 
                 variant={settings.ticker_enabled ? 'destructive' : 'default'} 
