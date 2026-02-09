@@ -5,6 +5,8 @@ export const COMMON_TIMEZONES = [
   { value: 'Asia/Riyadh', label: 'Saudi Arabia (AST)', country: 'Saudi Arabia' },
   { value: 'Asia/Kolkata', label: 'India (IST)', country: 'India' },
   { value: 'Asia/Dhaka', label: 'Bangladesh (BST)', country: 'Bangladesh' },
+  { value: 'Asia/Singapore', label: 'Singapore (SGT)', country: 'Singapore' },
+  { value: 'Europe/Berlin', label: 'Germany (CET/CEST)', country: 'Germany' },
   { value: 'Europe/London', label: 'UK (GMT/BST)', country: 'United Kingdom' },
   { value: 'America/New_York', label: 'US Eastern (EST/EDT)', country: 'United States' },
   { value: 'America/Los_Angeles', label: 'US Pacific (PST/PDT)', country: 'United States' },
