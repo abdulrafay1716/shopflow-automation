@@ -55,6 +55,8 @@ const AdminDashboard = () => {
   const [todayStats, setTodayStats] = useState({ orders: 0, revenue: 0 });
   const [automationRunning, setAutomationRunning] = useState(false);
   const [dataLoading, setDataLoading] = useState(true);
+  const [ordersLoading, setOrdersLoading] = useState(false);
+  const [orderItemsLoaded, setOrderItemsLoaded] = useState(false);
   const automationInterval = useRef<NodeJS.Timeout | null>(null);
 
   // Product form state
@@ -80,6 +82,13 @@ const AdminDashboard = () => {
     }
   }, [isAdmin]);
 
+  // Lazy-load order items when orders tab is opened
+  useEffect(() => {
+    if (activeTab === 'orders' && orders.length > 0 && !orderItemsLoaded) {
+      fetchOrderItems();
+    }
+  }, [activeTab, orders.length]);
+
   // Automation scheduler
   useEffect(() => {
     if (settings?.automation_running && !automationInterval.current) {
@@ -102,12 +111,11 @@ const AdminDashboard = () => {
   const fetchData = async () => {
     setDataLoading(true);
     try {
-      const [productsData, ordersData, settingsData, statsData, allItems] = await Promise.all([
+      const [productsData, settingsData, statsData, ordersData] = await Promise.all([
         adminApi('get_products'),
-        adminApi('get_orders'),
         adminApi('get_settings'),
         adminApi('get_stats'),
-        adminApi('get_all_order_items')
+        adminApi('get_orders'),
       ]);
 
       setProducts(productsData || []);
@@ -115,8 +123,19 @@ const AdminDashboard = () => {
       setSettings(settingsData);
       setTickerText(settingsData?.ticker_text || '');
       setTodayStats(statsData || { orders: 0, revenue: 0 });
+      setOrderItemsLoaded(false);
+    } catch (error) {
+      console.error('Error fetching data:', error);
+      toast.error('Failed to load data');
+    } finally {
+      setDataLoading(false);
+    }
+  };
 
-      // Group all items by order_id in one pass
+  const fetchOrderItems = async () => {
+    setOrdersLoading(true);
+    try {
+      const allItems = await adminApi('get_all_order_items');
       const itemsMap: Record<string, any[]> = {};
       if (allItems) {
         for (const item of allItems) {
@@ -125,11 +144,11 @@ const AdminDashboard = () => {
         }
       }
       setOrderItems(itemsMap);
+      setOrderItemsLoaded(true);
     } catch (error) {
-      console.error('Error fetching data:', error);
-      toast.error('Failed to load data');
+      console.error('Error fetching order items:', error);
     } finally {
-      setDataLoading(false);
+      setOrdersLoading(false);
     }
   };
 
