@@ -102,11 +102,12 @@ const AdminDashboard = () => {
   const fetchData = async () => {
     setDataLoading(true);
     try {
-      const [productsData, ordersData, settingsData, statsData] = await Promise.all([
+      const [productsData, ordersData, settingsData, statsData, allItems] = await Promise.all([
         adminApi('get_products'),
         adminApi('get_orders'),
         adminApi('get_settings'),
-        adminApi('get_stats')
+        adminApi('get_stats'),
+        adminApi('get_all_order_items')
       ]);
 
       setProducts(productsData || []);
@@ -115,19 +116,15 @@ const AdminDashboard = () => {
       setTickerText(settingsData?.ticker_text || '');
       setTodayStats(statsData || { orders: 0, revenue: 0 });
 
-      // Fetch order items for each order
-      if (ordersData) {
-        const itemsMap: Record<string, any[]> = {};
-        for (const order of ordersData) {
-          try {
-            const items = await adminApi('get_order_items', { order_id: order.id });
-            itemsMap[order.id] = items || [];
-          } catch (e) {
-            console.error('Error fetching items for order:', order.id);
-          }
+      // Group all items by order_id in one pass
+      const itemsMap: Record<string, any[]> = {};
+      if (allItems) {
+        for (const item of allItems) {
+          if (!itemsMap[item.order_id]) itemsMap[item.order_id] = [];
+          itemsMap[item.order_id].push(item);
         }
-        setOrderItems(itemsMap);
       }
+      setOrderItems(itemsMap);
     } catch (error) {
       console.error('Error fetching data:', error);
       toast.error('Failed to load data');
